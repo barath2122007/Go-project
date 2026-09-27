@@ -1,94 +1,63 @@
-package main
+package bloodbank
 
-import "fmt"
+import (
+	"encoding/json"
+	"errors"
+	"os"
+)
 
 type BloodBag struct {
-	UnitID         string
-	BloodGroup     string
-	VolumeML       int
-	DonorAge       int
-	CollectionDate string
+	UnitID         string `json:"unit_id"`
+	BloodGroup     string `json:"blood_group"`
+	VolumeML       int    `json:"volume_ml"`
+	DonorAge       int    `json:"donor_age"`
+	CollectionDate string `json:"collection_date"`
 }
 
-var bloodBags []BloodBag
+type BloodBank struct {
+	bloodBags []BloodBag
+}
 
-func main() {
+type bloodBankFile struct {
+	BloodBags []BloodBag `json:"blood_bags"`
+}
 
-	for {
-
-		fmt.Println("\nBlood Bank")
-		fmt.Println("1. Collect blood unit")
-		fmt.Println("2. Search blood unit")
-		fmt.Println("3. Update blood volume")
-		fmt.Println("4. Delete blood unit")
-		fmt.Println("5. Exit")
-
-		var choice int
-		fmt.Print("Enter option: ")
-		fmt.Scanln(&choice)
-		switch choice {
-		case 1:
-			collectFromUser()
-		case 2:
-			var unitID string
-			fmt.Print("Enter unit ID: ")
-			fmt.Scanln(&unitID)
-
-			unit := SearchUnit(unitID)
-
-			if unit == nil {
-				fmt.Println("Blood unit not found")
-			} else {
-				fmt.Printf("Blood unit is found: %+v\n", *unit)
-			}
-		case 3:
-			var unitID string
-			var volume int
-			fmt.Print("Enter unit ID: ")
-			fmt.Scanln(&unitID)
-
-			fmt.Print("Enter volume in  ML: ")
-			fmt.Scanln(&volume)
-			fmt.Println("Volume updated successfully")
-			fmt.Println(UpdateVolume(unitID, volume))
-		case 4:
-			var unitID string
-
-			fmt.Print("Enter unit ID: ")
-			fmt.Scanln(&unitID)
-
-			fmt.Println(DiscardUnit(unitID))
-		case 5:
-			return
-		default:
-			fmt.Println("Invalid option")
-		}
+func LoadFromFile(path string) (*BloodBank, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return &BloodBank{}, nil
 	}
+	if err != nil {
+		return nil, err
+	}
+
+	var stored bloodBankFile
+	if err := json.Unmarshal(data, &stored); err != nil {
+		return nil, err
+	}
+
+	return &BloodBank{bloodBags: stored.BloodBags}, nil
 }
 
-func collectFromUser() {
+func (bank *BloodBank) SaveToFile(path string) error {
+	data, err := json.MarshalIndent(bloodBankFile{BloodBags: bank.bloodBags}, "", "  ")
+	if err != nil {
+		return err
+	}
 
-	var b BloodBag
+	temporaryPath := path + ".tmp"
+	if err := os.WriteFile(temporaryPath, data, 0600); err != nil {
+		return err
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		_ = os.Remove(temporaryPath)
+		return err
+	}
 
-	fmt.Print("Enter unit ID: ")
-	fmt.Scanln(&b.UnitID)
-
-	fmt.Print("Enter blood group: ")
-	fmt.Scanln(&b.BloodGroup)
-
-	fmt.Print("Enter collection date: ")
-	fmt.Scanln(&b.CollectionDate)
-
-	fmt.Print("Enter volume in ML: ")
-	fmt.Scanln(&b.VolumeML)
-
-	fmt.Print("Enter donor age: ")
-	fmt.Scanln(&b.DonorAge)
-
-	fmt.Println(CollectUnit(b))
+	return nil
 }
 
-func CollectUnit(b BloodBag) string {
+func (bank *BloodBank) CollectUnit(b BloodBag) string {
 
 	if b.DonorAge < 18 {
 		return "Invalid age"
@@ -105,29 +74,29 @@ func CollectUnit(b BloodBag) string {
 		return "Invalid blood group"
 	}
 
-	bloodBags = append(bloodBags, b)
+	bank.bloodBags = append(bank.bloodBags, b)
 
 	return "Blood bag collected"
 }
 
-func SearchUnit(unitID string) *BloodBag {
+func (bank *BloodBank) SearchUnit(unitID string) *BloodBag {
 
-	for i := 0; i < len(bloodBags); i++ {
+	for i := 0; i < len(bank.bloodBags); i++ {
 
-		if bloodBags[i].UnitID == unitID {
-			return &bloodBags[i]
+		if bank.bloodBags[i].UnitID == unitID {
+			return &bank.bloodBags[i]
 		}
 	}
 
 	return nil
 }
 
-func UpdateVolume(unitID string, volume int) string {
+func (bank *BloodBank) UpdateVolume(unitID string, volume int) string {
 
-	for i := 0; i < len(bloodBags); i++ {
+	for i := 0; i < len(bank.bloodBags); i++ {
 
-		if bloodBags[i].UnitID == unitID {
-			bloodBags[i].VolumeML = volume
+		if bank.bloodBags[i].UnitID == unitID {
+			bank.bloodBags[i].VolumeML = volume
 			return "Volume updated"
 		}
 	}
@@ -135,20 +104,17 @@ func UpdateVolume(unitID string, volume int) string {
 	return "Blood unit not found"
 }
 
-func DiscardUnit(unitID string) string {
+func (bank *BloodBank) DiscardUnit(unitID string) string {
+	for i := 0; i < len(bank.bloodBags); i++ {
+		if bank.bloodBags[i].UnitID == unitID {
+			bank.bloodBags = append(bank.bloodBags[:i], bank.bloodBags[i+1:]...)
+			return "Blood bag discarded"
+		}
+	}
 
-    newList := []BloodBag{}
+	return "Blood unit not found"
+}
 
-    for i := 0; i < len(bloodBags); i++ {
-
-        if bloodBags[i].UnitID == unitID {
-            continue
-        }
-
-        newList = append(newList, bloodBags[i])
-    }
-
-    bloodBags = newList
-
-    return "Blood bag discarded"
+func (bank *BloodBank) ListUnits() []BloodBag {
+	return append([]BloodBag(nil), bank.bloodBags...)
 }
